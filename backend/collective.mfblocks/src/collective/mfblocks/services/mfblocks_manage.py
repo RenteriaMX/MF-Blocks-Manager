@@ -389,14 +389,20 @@ class MFBlocksManagePost(Service):
             }
 
         except PermissionError:
+            import transaction
+            transaction.abort()
             logger.error("[MF] Permission error creating MFBlock '%s'", title, exc_info=True)
             self.request.response.setStatus(500)
             return {"error": "Sin permisos para crear el bloque o extraer el bundle", "success": False}
         except FileNotFoundError:
+            import transaction
+            transaction.abort()
             logger.error("[MF] File not found creating MFBlock '%s'", title, exc_info=True)
             self.request.response.setStatus(500)
             return {"error": "Directorio de bundles no encontrado. Verifica que MF_BLOCKS_DIR existe y es accesible.", "success": False}
         except Exception as e:
+            import transaction
+            transaction.abort()
             logger.error("[MF] Failed to create MFBlock '%s': %s", title, str(e), exc_info=True)
             self.request.response.setStatus(500)
             return {"error": "Error al crear el bloque. Revisa los logs del servidor.", "success": False}
