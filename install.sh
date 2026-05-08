@@ -294,8 +294,12 @@ setup_bundles_dir() {
         log "Directorio creado: $MF_BLOCKS_DIR"
     fi
 
-    # Crear drop-in de systemd para cada instancia backend con MF_BLOCKS_DIR
-    BACKEND_UNITS=$(systemd_user list-units --no-legend "plone-*-backend*" 2>/dev/null | awk '{print $1}')
+    # Crear drop-in de systemd para CADA instancia backend con MF_BLOCKS_DIR
+    # --all incluye instancias detenidas, no solo las activas
+    BACKEND_UNITS=$(systemd_user list-units --all --no-legend "plone-*-backend*" 2>/dev/null | awk '{print $1}')
+    UNIT_COUNT=$(echo "$BACKEND_UNITS" | grep -c '\.' 2>/dev/null || echo 0)
+    log "Instancias backend detectadas: $UNIT_COUNT"
+
     for svc in $BACKEND_UNITS; do
         SVC_NAME="${svc%.service}"
         DROPIN_DIR="$HOME/.config/systemd/user/${SVC_NAME}.d"
@@ -304,12 +308,15 @@ setup_bundles_dir() {
 [Service]
 Environment=MF_BLOCKS_DIR=${MF_BLOCKS_DIR}
 EOF
-        log "MF_BLOCKS_DIR configurado en $DROPIN_DIR/mf-blocks-env.conf"
+        log "  [$SVC_NAME] MF_BLOCKS_DIR=$MF_BLOCKS_DIR"
     done
 
     if [ -n "$BACKEND_UNITS" ]; then
         systemd_user daemon-reload
-        log "Systemd recargado con nueva variable de entorno."
+        log "Systemd recargado."
+    else
+        warn "No se encontraron instancias backend para configurar MF_BLOCKS_DIR."
+        warn "Configura manualmente: Environment=MF_BLOCKS_DIR=${MF_BLOCKS_DIR}"
     fi
 }
 
@@ -417,11 +424,14 @@ activate_addon() {
     log "zope.conf: $ZOPE_CONF"
 
     # Detener TODAS las instancias de backend para acceso exclusivo a ZODB
-    BACKEND_SERVICES=$(systemd_user list-units --no-legend "plone-*-backend*" 2>/dev/null | awk '{print $1}')
+    # --all incluye instancias detenidas (por si alguna quedó en estado failed)
+    BACKEND_SERVICES=$(systemd_user list-units --all --no-legend "plone-*-backend*" 2>/dev/null | awk '{print $1}')
+    SVC_COUNT=$(echo "$BACKEND_SERVICES" | grep -c '\.' 2>/dev/null || echo 0)
     if [ -n "$BACKEND_SERVICES" ]; then
+        log "Deteniendo $SVC_COUNT instancia(s) backend..."
         for svc in $BACKEND_SERVICES; do
-            log "Deteniendo $svc..."
             systemd_user stop "$svc" 2>/dev/null || true
+            log "  Detenido: $svc"
         done
         sleep 2
     fi
@@ -491,12 +501,13 @@ PYEOF
 
     # Arrancar TODAS las instancias de backend
     if [ -n "$BACKEND_SERVICES" ]; then
+        log "Arrancando $SVC_COUNT instancia(s) backend..."
         for svc in $BACKEND_SERVICES; do
-            log "Arrancando $svc..."
             systemd_user start "$svc" 2>/dev/null || true
+            log "  Arrancado: $svc"
         done
         sleep 3
-        log "Backend reiniciado."
+        log "Backend reiniciado ($SVC_COUNT instancia(s))."
     fi
 }
 
