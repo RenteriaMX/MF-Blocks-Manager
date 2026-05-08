@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+.pnpm-store/
+*.tgz
+
+# Build outputs
+/frontend/volto-mfblocks/build/
+/frontend/volto-mfblocks/dist/
+/frontend/volto-mfblocks/.storybook-out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/

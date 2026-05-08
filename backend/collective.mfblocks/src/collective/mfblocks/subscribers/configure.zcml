@@ -1,0 +1,23 @@
+<configure xmlns="http://namespaces.zope.org/zope">
+
+  <!-- Al crear o modificar un MFBlock: extraer el bundle -->
+  <subscriber
+      for="collective.mfblocks.content.mfblock.IMFBlock
+           zope.lifecycleevent.interfaces.IObjectCreatedEvent"
+      handler=".mfblock.extract_bundle"
+      />
+
+  <subscriber
+      for="collective.mfblocks.content.mfblock.IMFBlock
+           zope.lifecycleevent.interfaces.IObjectModifiedEvent"
+      handler=".mfblock.extract_bundle"
+      />
+
+  <!-- Al eliminar un MFBlock: limpiar archivos -->
+  <subscriber
+      for="collective.mfblocks.content.mfblock.IMFBlock
+           zope.lifecycleevent.interfaces.IObjectRemovedEvent"
+      handler=".mfblock.remove_bundle"
+      />
+
+</configure>

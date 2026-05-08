@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "collective.mfblocks"
+version = "1.0.0"
+description = "Module Federation blocks manager for Plone"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-2.0-only"
+dependencies = [
+    "Products.CMFPlone",
+    "plone.api",
+    "plone.restapi",
+]
+
+[project.entry-points."z3c.autoinclude.plugin"]
+target = "plone"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/collective"]
