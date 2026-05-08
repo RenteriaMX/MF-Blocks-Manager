@@ -282,7 +282,7 @@ with open('$PACKAGE_JSON', 'w') as f:
 }
 
 ###############################################################################
-# 9. Configurar directorio de bundles
+# 9. Configurar directorio de bundles y variable de entorno MF_BLOCKS_DIR
 ###############################################################################
 setup_bundles_dir() {
     log "=== Configurando directorio de bundles ==="
@@ -292,6 +292,24 @@ setup_bundles_dir() {
     else
         mkdir -p "$MF_BLOCKS_DIR"
         log "Directorio creado: $MF_BLOCKS_DIR"
+    fi
+
+    # Crear drop-in de systemd para cada instancia backend con MF_BLOCKS_DIR
+    BACKEND_UNITS=$(systemd_user list-units --no-legend "plone-*-backend*" 2>/dev/null | awk '{print $1}')
+    for svc in $BACKEND_UNITS; do
+        SVC_NAME="${svc%.service}"
+        DROPIN_DIR="$HOME/.config/systemd/user/${SVC_NAME}.d"
+        mkdir -p "$DROPIN_DIR"
+        cat > "$DROPIN_DIR/mf-blocks-env.conf" << EOF
+[Service]
+Environment=MF_BLOCKS_DIR=${MF_BLOCKS_DIR}
+EOF
+        log "MF_BLOCKS_DIR configurado en $DROPIN_DIR/mf-blocks-env.conf"
+    done
+
+    if [ -n "$BACKEND_UNITS" ]; then
+        systemd_user daemon-reload
+        log "Systemd recargado con nueva variable de entorno."
     fi
 }
 

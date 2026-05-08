@@ -395,7 +395,7 @@ class MFBlocksManagePost(Service):
         except FileNotFoundError:
             logger.error("[MF] File not found creating MFBlock '%s'", title, exc_info=True)
             self.request.response.setStatus(500)
-            return {"error": "Directorio de bundles no encontrado. Verifica que /opt/plone/mf-blocks existe.", "success": False}
+            return {"error": "Directorio de bundles no encontrado. Verifica que MF_BLOCKS_DIR existe y es accesible.", "success": False}
         except Exception as e:
             logger.error("[MF] Failed to create MFBlock '%s': %s", title, str(e), exc_info=True)
             self.request.response.setStatus(500)
