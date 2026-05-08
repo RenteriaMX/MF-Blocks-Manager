@@ -370,6 +370,21 @@ with open('$NGINX_CONF', 'w') as f:
 print('OK')
 " || { error "Error al modificar $NGINX_CONF"; }
 
+    # Crear zona de rate limiting para el admin endpoint
+    RATELIMIT_FILE="/etc/nginx/conf.d/mfblocks-ratelimit.conf"
+    if [ ! -f "$RATELIMIT_FILE" ]; then
+        echo 'limit_req_zone $binary_remote_addr zone=mfblocks_admin:10m rate=5r/s;' \
+            | sudo tee "$RATELIMIT_FILE" > /dev/null && \
+            log "Rate limiting configurado en $RATELIMIT_FILE"
+    fi
+
+    # Permitir a nginx (www-data) atravesar los directorios del usuario
+    sudo chmod o+x "$HOME"
+    sudo chmod o+x "$PROJECT_DIR"
+    sudo chmod o+x "$PROJECT_DIR/var"
+    sudo chmod o+x "$MF_BLOCKS_DIR"
+    log "Permisos de traversal configurados para nginx."
+
     # Recargar nginx con rutas absolutas (requiere NOPASSWD en sudoers para estos dos comandos)
     if sudo /usr/sbin/nginx -t 2>/dev/null; then
         if sudo /usr/bin/systemctl reload nginx 2>/dev/null; then
