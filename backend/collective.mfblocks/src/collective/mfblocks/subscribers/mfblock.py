@@ -11,9 +11,14 @@ When an MFBlock is deleted:
 
 Configuration:
   Set environment variable MF_BLOCKS_DIR to change the extraction directory.
-  Default: /opt/plone/mf-blocks
+  Auto-detection order:
+    1. MF_BLOCKS_DIR env var (explicit)
+    2. INSTANCE_HOME -> derive <project>/var/mf-blocks
+    3. HOME -> <home>/*/var/mf-blocks (first match)
+    4. /opt/plone/mf-blocks (legacy fallback)
 """
 
+import glob
 import io
 import logging
 import os
@@ -23,7 +28,36 @@ import tarfile
 
 logger = logging.getLogger(__name__)
 
-MF_BLOCKS_DIR = os.environ.get("MF_BLOCKS_DIR", "/opt/plone/mf-blocks")
+
+def _resolve_mf_blocks_dir():
+    # 1. Explicit env var
+    if os.environ.get("MF_BLOCKS_DIR"):
+        path = os.environ["MF_BLOCKS_DIR"]
+        logger.info("[MF] MF_BLOCKS_DIR from env: %s", path)
+        return path
+
+    # 2. Derive from INSTANCE_HOME: .../backend/instance -> .../var/mf-blocks
+    instance_home = os.environ.get("INSTANCE_HOME", "")
+    if instance_home:
+        project = os.path.dirname(os.path.dirname(instance_home))
+        candidate = os.path.join(project, "var", "mf-blocks")
+        logger.info("[MF] MF_BLOCKS_DIR auto-detected from INSTANCE_HOME: %s", candidate)
+        return candidate
+
+    # 3. Scan $HOME/*/var/mf-blocks
+    home = os.environ.get("HOME", "")
+    if home:
+        matches = glob.glob(os.path.join(home, "*", "var", "mf-blocks"))
+        if matches:
+            logger.info("[MF] MF_BLOCKS_DIR auto-detected from HOME scan: %s", matches[0])
+            return matches[0]
+
+    # 4. Legacy fallback
+    logger.warning("[MF] MF_BLOCKS_DIR not detected, using default /opt/plone/mf-blocks")
+    return "/opt/plone/mf-blocks"
+
+
+MF_BLOCKS_DIR = _resolve_mf_blocks_dir()
 
 # Regex: solo letras, números, guiones y guiones bajos
 VALID_BLOCK_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
