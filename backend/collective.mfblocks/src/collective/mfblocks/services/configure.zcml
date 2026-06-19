@@ -1,0 +1,42 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:plone="http://namespaces.plone.org/plone"
+    >
+
+  <include package="plone.restapi" file="meta.zcml" />
+
+  <!-- @blocks-registry: public endpoint for Volto to discover MF blocks -->
+  <plone:service
+      method="GET"
+      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+      factory=".blocks_registry.BlocksRegistryGet"
+      name="@blocks-registry"
+      permission="zope2.View"
+      />
+
+  <!-- @mfblocks-manage: admin endpoint for managing MF blocks -->
+  <plone:service
+      method="GET"
+      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+      factory=".mfblocks_manage.MFBlocksManageGet"
+      name="@mfblocks-manage"
+      permission="cmf.ManagePortal"
+      />
+
+  <plone:service
+      method="PATCH"
+      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+      factory=".mfblocks_manage.MFBlocksManagePatch"
+      name="@mfblocks-manage"
+      permission="cmf.ManagePortal"
+      />
+
+  <plone:service
+      method="POST"
+      for="Products.CMFPlone.interfaces.IPloneSiteRoot"
+      factory=".mfblocks_manage.MFBlocksManagePost"
+      name="@mfblocks-manage"
+      permission="cmf.ManagePortal"
+      />
+
+</configure>
