@@ -183,6 +183,64 @@ def _detect_version_from_filename(filename):
     return None
 
 
+# Container name declarado en remoteEntry.js (convencion del proyecto: voltoXBlock).
+CONTAINER_NAME_RE = re.compile(r"\bvolto[A-Za-z0-9]+Block\b")
+
+
+def _name_from_manifest(manifest):
+    """Nombre del contenedor MF segun mf-manifest.json (fuente preferida y exacta).
+
+    El webpack.base de examples/ emite mf-manifest.json con {name, module, version};
+    'name' es el global que el host busca en window. Es el contrato explicito.
+    """
+    if not manifest:
+        return None
+    name = manifest.get("name", "")
+    if isinstance(name, str) and name.strip():
+        return name.strip()[:MAX_REMOTE_NAME_LENGTH]
+    return None
+
+
+def _detect_name_from_bundle(bundle_bytes):
+    """Auto-detecta el nombre del contenedor leyendo remoteEntry.js del tar.gz.
+
+    Fallback para bundles sin mf-manifest.json. Usa la convencion voltoXBlock.
+    Asi el `remote_name` SIEMPRE sale del bundle tal como se compilo: el operador
+    no teclea nada y nunca hay mismatch de mayusculas con lo que pide el host.
+    """
+    try:
+        with tarfile.open(fileobj=io.BytesIO(bundle_bytes), mode="r:gz") as tar:
+            for i, member in enumerate(tar.getmembers()):
+                if i >= MAX_TAR_MEMBERS:
+                    break
+                if member.name.endswith("remoteEntry.js"):
+                    f = tar.extractfile(member)
+                    if f:
+                        content = f.read().decode("utf-8", errors="ignore")
+                        m = CONTAINER_NAME_RE.search(content)
+                        if m:
+                            return m.group(0)
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_remote_name(manifest, bundle_bytes, provided=""):
+    """Resuelve el remote_name con el BUNDLE como fuente de verdad.
+
+    Orden: mf-manifest.json `name` > regex sobre remoteEntry.js > lo provisto.
+    Si el operador mando algo distinto a lo detectado, gana el bundle (se loguea):
+    el nombre que el host busca es el que el bundle declara, no lo tecleado.
+    """
+    detected = _name_from_manifest(manifest) or _detect_name_from_bundle(bundle_bytes)
+    if detected:
+        if provided and provided != detected:
+            logger.info("[MF] remote_name '%s' ignorado; se usa el del bundle: '%s'",
+                        provided, detected)
+        return detected
+    return (provided or "").strip()[:MAX_REMOTE_NAME_LENGTH]
+
+
 @implementer(IPublishTraverse)
 class MFBlocksManageGet(Service):
     """GET /@mfblocks-manage"""
@@ -312,12 +370,20 @@ class MFBlocksManagePatch(Service):
                     contentType="application/gzip",
                     filename=bundle_filename[:MAX_FILENAME_LENGTH],
                 )
+                update_manifest = _read_manifest_from_bundle(bundle_bytes)
+                # remote_name: re-detectar del bundle nuevo (sigue siendo la fuente
+                # de verdad), por si el rebuild cambio el nombre del contenedor.
+                detected_name = _resolve_remote_name(update_manifest, bundle_bytes,
+                                                     getattr(obj, "remote_name", ""))
+                if detected_name and detected_name != getattr(obj, "remote_name", ""):
+                    logger.info("[MF] remote_name actualizado desde el bundle: %s", detected_name)
+                    obj.remote_name = detected_name
                 # Version: el input explicito del usuario gana; el auto-detect
                 # (manifest > package.json > filename) es solo fallback
                 if new_version:
                     obj.version = new_version
                 else:
-                    detected_version = _version_from_manifest(_read_manifest_from_bundle(bundle_bytes)) \
+                    detected_version = _version_from_manifest(update_manifest) \
                         or _detect_version_from_bundle(bundle_bytes) \
                         or _detect_version_from_filename(bundle_filename)
                     if detected_version:
@@ -372,6 +438,7 @@ class MFBlocksManagePost(Service):
 
         title = data.get("title", "").strip()[:MAX_TITLE_LENGTH]
         block_id = data.get("block_id", "").strip()
+        # remote_name es opcional: se auto-detecta del bundle (fuente de verdad).
         remote_name = data.get("remote_name", "").strip()[:MAX_REMOTE_NAME_LENGTH]
         remote_module = data.get("remote_module", "./block").strip()
         version = data.get("version", "1.0.0").strip()[:20]
@@ -395,9 +462,6 @@ class MFBlocksManagePost(Service):
         if not VALID_BLOCK_ID.match(block_id):
             self.request.response.setStatus(400)
             return {"error": "block_id solo puede contener letras, números, guiones y guiones bajos"}
-        if not remote_name:
-            self.request.response.setStatus(400)
-            return {"error": "El remote_name es obligatorio"}
         if not bundle_data:
             self.request.response.setStatus(400)
             return {"error": "El bundle (base64) es obligatorio"}
@@ -432,6 +496,15 @@ class MFBlocksManagePost(Service):
                 return {"error": "El bundle debe ser un archivo .tar.gz válido"}
 
             manifest = _read_manifest_from_bundle(bundle_bytes)
+
+            # remote_name: el BUNDLE es la fuente de verdad. El operador no teclea
+            # nada; sale del bundle tal como se compilo (manifest name > regex).
+            remote_name = _resolve_remote_name(manifest, bundle_bytes, remote_name)
+            if not remote_name:
+                self.request.response.setStatus(400)
+                return {"error": "No se pudo detectar el remote_name del bundle "
+                                 "(sin mf-manifest.json ni patron voltoXBlock en "
+                                 "remoteEntry.js). Recompila el bloque."}
 
             # Auto-detect module: manifest (contrato explicito) > regex
             # sobre remoteEntry.js (fallback para bundles sin manifest)

@@ -19,8 +19,8 @@ class IMFBlock(model.Schema):
 
     remote_name = schema.TextLine(
         title=u"Remote Name",
-        description=u"Webpack container name (e.g. 'voltoSpacerBlock'). Must match the 'name' in webpack.config.js of the block.",
-        required=True,
+        description=u"Webpack container name (e.g. 'voltoSpacerBlock'). Auto-detected from the uploaded bundle (mf-manifest.json 'name', or the voltoXBlock global in remoteEntry.js); the bundle is the source of truth, so you don't type it by hand.",
+        required=False,
     )
 
     remote_module = schema.TextLine(

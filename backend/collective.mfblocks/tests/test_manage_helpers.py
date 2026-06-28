@@ -155,3 +155,49 @@ def test_safe_filename_accepts(good):
 )
 def test_safe_filename_rejects(bad):
     assert not manage.SAFE_FILENAME_RE.match(bad)
+
+
+# ─── remote_name auto-detect (el BUNDLE es la fuente de verdad) ───
+
+
+def test_name_from_manifest():
+    man = {"name": "voltoSeminarCardBlock", "module": "./block", "version": "1.0.0"}
+    assert manage._name_from_manifest(man) == "voltoSeminarCardBlock"
+
+
+def test_name_from_manifest_empty():
+    assert manage._name_from_manifest({}) is None
+    assert manage._name_from_manifest(None) is None
+
+
+def test_detect_name_from_bundle_regex():
+    raw = make_targz({"remoteEntry.js": "(()=>{var voltoEventCardBlock={};})()"})
+    assert manage._detect_name_from_bundle(raw) == "voltoEventCardBlock"
+
+
+def test_detect_name_from_bundle_none_when_absent():
+    raw = make_targz({"remoteEntry.js": "no hay patron"})
+    assert manage._detect_name_from_bundle(raw) is None
+
+
+def test_resolve_remote_name_manifest_wins_over_typed():
+    man = {"name": "voltoSeminarCardBlock"}
+    raw = make_targz({"mf-manifest.json": json.dumps(man),
+                      "remoteEntry.js": "var voltoSeminarCardBlock;"})
+    # el operador teclea minusculas, pero gana lo que declara el bundle
+    assert manage._resolve_remote_name(man, raw, "voltoseminarcardblock") == "voltoSeminarCardBlock"
+
+
+def test_resolve_remote_name_regex_fallback_without_manifest():
+    raw = make_targz({"remoteEntry.js": "var voltoEventCardBlock={};"})
+    assert manage._resolve_remote_name(None, raw, "") == "voltoEventCardBlock"
+
+
+def test_resolve_remote_name_falls_back_to_provided():
+    raw = make_targz({"remoteEntry.js": "sin patron"})
+    assert manage._resolve_remote_name(None, raw, "voltoXBlock") == "voltoXBlock"
+
+
+def test_resolve_remote_name_empty_when_nothing():
+    raw = make_targz({"remoteEntry.js": "sin patron"})
+    assert manage._resolve_remote_name(None, raw, "") == ""
