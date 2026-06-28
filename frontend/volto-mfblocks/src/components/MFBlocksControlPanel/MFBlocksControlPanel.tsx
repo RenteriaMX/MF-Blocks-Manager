@@ -161,14 +161,18 @@ async function readBundleInfo(file: File): Promise<BundleInfo | null> {
     if (m) info.version = m[1];
   }
 
-  // 4) block_id/title: el @type REAL que declara el bloque (NO derivado del
-  // name, para no inventar "event-card" cuando el bloque es "eventCard").
-  // El group NO se toma del bundle: se deja el default del form (Bricks).
+  // 4) block_id/title del @type que declara el bloque. OJO: el block_id es el
+  // @type que tus PÁGINAS referencian (convención de despliegue = MINÚSCULA:
+  // eventcard, seminarcard), NO el id interno camelCase del bundle. Por eso lo
+  // pasamos a minúscula: el bundle declara id:"eventCard" pero la página usa
+  // "eventcard"; si registramos camelCase, Volto no encuentra el bloque al
+  // renderizar y sale "Unknown Block". Queda EDITABLE (no es dato del bundle,
+  // es tu convención): si tu despliegue usa otro slug, lo ajustas a mano.
   for (const k of Object.keys(files)) {
     if (!k.endsWith('.js') || k.endsWith('remoteEntry.js')) continue;
     const m = dec.decode(files[k]).match(BLOCK_CONFIG_RE);
     if (m && m[1] !== 'default') {
-      info.block_id = m[1];
+      info.block_id = m[1].toLowerCase();
       info.title = m[2];
       break;
     }
