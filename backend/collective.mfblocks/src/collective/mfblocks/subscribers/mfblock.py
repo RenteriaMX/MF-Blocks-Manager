@@ -62,6 +62,15 @@ MF_BLOCKS_DIR = _resolve_mf_blocks_dir()
 # Regex: solo letras, números, guiones y guiones bajos
 VALID_BLOCK_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 
+# MFB-4: tope del tamaño total DESCOMPRIMIDO (anti gzip-bomb / DoS de disco).
+# El bundle comprimido ya se topa en 50 MB (MAX_BUNDLE_SIZE en el endpoint) y el
+# numero de miembros en 100 (MAX_TAR_MEMBERS), pero cada miembro es de tamaño
+# ilimitado: un gzip de pocos KB puede inflar a varios GB. Sumamos member.size
+# de los archivos y abortamos si excede este limite. Configurable via env.
+MAX_TOTAL_UNCOMPRESSED = int(
+    os.environ.get("MF_BLOCKS_MAX_UNCOMPRESSED", str(200 * 1024 * 1024))
+)  # 200 MB por defecto
+
 
 def _validate_block_id(block_id):
     """Validate block_id to prevent path traversal."""
@@ -83,6 +92,7 @@ def _get_safe_tar_members(tar, target_dir):
     """Filter tar members: reject symlinks, hardlinks, and path escapes."""
     safe_members = []
     base = os.path.realpath(target_dir)
+    total_uncompressed = 0
 
     for member in tar.getmembers():
         # Reject symlinks and hardlinks
@@ -93,6 +103,16 @@ def _get_safe_tar_members(tar, target_dir):
         # MFB-2: solo archivos regulares y directorios (rechaza FIFO/device/char)
         if not (member.isfile() or member.isdir()):
             logger.error("[MF] Rejected non-regular tar member: %s", member.name)
+            return None
+
+        # MFB-4: acumular tamaño descomprimido y abortar si excede el tope
+        # (anti gzip-bomb). member.size es 0 para directorios.
+        total_uncompressed += member.size
+        if total_uncompressed > MAX_TOTAL_UNCOMPRESSED:
+            logger.error(
+                "[MF] Rejected tar: uncompressed size exceeds %d bytes (gzip-bomb?)",
+                MAX_TOTAL_UNCOMPRESSED,
+            )
             return None
 
         # Verify extracted path stays within target_dir

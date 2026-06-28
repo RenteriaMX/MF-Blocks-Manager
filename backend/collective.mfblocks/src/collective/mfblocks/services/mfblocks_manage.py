@@ -23,6 +23,22 @@ from zope.publisher.interfaces import IPublishTraverse
 
 logger = logging.getLogger(__name__)
 
+# MFB-5: log de auditoria dedicado. La subida/actualizacion de un bloque MF es
+# un DEPLOY DE CODIGO privilegiado (el remoteEntry.js se ejecuta same-origin en
+# el navegador de cada visitante), por eso se registra QUIEN hizo QUE. Se puede
+# enrutar a su propio handler/archivo via logging config ("collective.mfblocks.audit").
+audit = logging.getLogger("collective.mfblocks.audit")
+
+
+def _current_user_id():
+    """Id del usuario autenticado (para la pista de auditoria)."""
+    try:
+        user = api.user.get_current()
+        return (user.getId() if user else None) or "<anon>"
+    except Exception:
+        return "<unknown>"
+
+
 # Límite de tamaño del bundle: 50 MB
 MAX_BUNDLE_SIZE = 50 * 1024 * 1024
 
@@ -333,6 +349,15 @@ class MFBlocksManagePatch(Service):
             self.request.response.setStatus(500)
             return {"error": "Error al procesar la acción. Revisa los logs del servidor.", "success": False}
 
+        # MFB-5: pista de auditoria (quien hizo que sobre que bloque)
+        audit.info(
+            "user=%s action=%s block_id=%s uid=%s version=%s",
+            _current_user_id(),
+            action,
+            getattr(obj, "block_id", ""),
+            uid,
+            result.get("version", getattr(obj, "version", "")),
+        )
         return result
 
 
@@ -460,6 +485,15 @@ class MFBlocksManagePost(Service):
             obj.reindexObject()
 
             state = api.content.get_state(obj, default="private")
+
+            # MFB-5: pista de auditoria de la creacion (deploy de codigo)
+            audit.info(
+                "user=%s action=create block_id=%s version=%s title=%s",
+                _current_user_id(),
+                block_id,
+                version,
+                title,
+            )
 
             return {
                 "success": True,

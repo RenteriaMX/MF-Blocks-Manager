@@ -100,6 +100,36 @@ def test_safe_members_rejects_hardlink(blocks_dir):
         assert mfblock._get_safe_tar_members(tar, str(blocks_dir / "b")) is None
 
 
+# ─── gzip-bomb / tope de tamaño descomprimido (MFB-4) ────────────
+
+
+def test_safe_members_rejects_gzip_bomb(blocks_dir, monkeypatch):
+    """El tope de tamaño descomprimido frena un tar que infla a > limite,
+    aunque el comprimido sea diminuto y tenga pocos miembros."""
+    monkeypatch.setattr(mfblock, "MAX_TOTAL_UNCOMPRESSED", 1024)  # 1 KB
+    raw = make_targz({"fat.js": "0" * 4096})  # 4 KB descomprimido
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        assert mfblock._get_safe_tar_members(tar, str(blocks_dir / "b")) is None
+
+
+def test_safe_members_accepts_under_uncompressed_cap(blocks_dir, monkeypatch):
+    """Justo bajo el tope se acepta (el cap no es demasiado agresivo)."""
+    monkeypatch.setattr(mfblock, "MAX_TOTAL_UNCOMPRESSED", 8192)  # 8 KB
+    raw = make_targz({"ok.js": "0" * 4096})
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        members = mfblock._get_safe_tar_members(tar, str(blocks_dir / "b"))
+    assert members is not None
+    assert {m.name for m in members} == {"ok.js"}
+
+
+def test_extract_bundle_cleans_up_on_gzip_bomb(blocks_dir, monkeypatch):
+    """extract_bundle no deja directorio si el bundle excede el tope."""
+    monkeypatch.setattr(mfblock, "MAX_TOTAL_UNCOMPRESSED", 1024)
+    raw = make_targz({"fat.js": "0" * 4096})
+    mfblock.extract_bundle(make_obj("spacer", raw), None)
+    assert not (blocks_dir / "spacer").exists()
+
+
 # ─── extract_bundle ──────────────────────────────────────────────
 
 
