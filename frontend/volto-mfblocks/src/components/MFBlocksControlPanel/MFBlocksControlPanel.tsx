@@ -71,8 +71,10 @@ const EXPOSED_MODULE_RE = /"(\.\/[^"]+)":\(\)=>/;         // modulo expuesto en 
 const VERSION_FROM_FILENAME_RE = /-(\d+\.\d+\.\d+[a-zA-Z0-9._-]*)\.tar\.gz$/;
 // id/title/group que declara el PROPIO bloque (su @type real). Exigimos group para
 // descartar la variacion {id:"default",title:"Default"} que no lo trae.
-const BLOCK_CONFIG_RE = /id:"([^"]+)",title:"([^"]+)"[^}]*?group:"([^"]+)"/;
-const KNOWN_GROUPS = new Set(['bricks', 'common', 'text', 'media', 'mostUsed']);
+// Exigimos `group:` en la regex SOLO para descartar la variacion
+// {id:"default",title:"Default"} (que no lo trae); el group NO se autollena
+// -> el form se queda en su default (Bricks) y lo decide el operador.
+const BLOCK_CONFIG_RE = /id:"([^"]+)",title:"([^"]+)"[^}]*?group:"[^"]+"/;
 
 interface BundleInfo {
   remote_name?: string;
@@ -80,7 +82,6 @@ interface BundleInfo {
   version?: string;
   block_id?: string;
   title?: string;
-  group?: string;
 }
 
 // gzip nativo del navegador (sin dependencias). null si el browser no lo soporta
@@ -160,15 +161,15 @@ async function readBundleInfo(file: File): Promise<BundleInfo | null> {
     if (m) info.version = m[1];
   }
 
-  // 4) block_id/title/group: el @type REAL que declara el bloque (NO derivado del
+  // 4) block_id/title: el @type REAL que declara el bloque (NO derivado del
   // name, para no inventar "event-card" cuando el bloque es "eventCard").
+  // El group NO se toma del bundle: se deja el default del form (Bricks).
   for (const k of Object.keys(files)) {
     if (!k.endsWith('.js') || k.endsWith('remoteEntry.js')) continue;
     const m = dec.decode(files[k]).match(BLOCK_CONFIG_RE);
     if (m && m[1] !== 'default') {
       info.block_id = m[1];
       info.title = m[2];
-      if (KNOWN_GROUPS.has(m[3])) info.group = m[3];
       break;
     }
   }
@@ -307,7 +308,7 @@ const MFBlocksControlPanel: React.FC = () => {
       if (info.version) { next.version = info.version; auto.version = true; }
       if (info.block_id) { next.block_id = info.block_id; auto.block_id = true; }
       if (info.title) { next.title = info.title; auto.title = true; }
-      if (info.group) { next.group = info.group; auto.group = true; }
+      // group: NO se autollena; se respeta el default del form (Bricks).
       return next;
     });
     setAutoFields(auto);
@@ -622,9 +623,10 @@ const MFBlocksControlPanel: React.FC = () => {
                 required
               />
               <Form.Input
-                label="Remote Module"
+                label={autoFields.remote_module ? 'Remote Module (del bundle)' : 'Remote Module'}
                 placeholder="./block"
                 value={formData.remote_module}
+                readOnly={!!autoFields.remote_module}
                 onChange={(_, { value }) =>
                   setFormData((prev) => ({ ...prev, remote_module: value as string }))
                 }
