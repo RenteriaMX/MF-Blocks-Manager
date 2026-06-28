@@ -59,6 +59,123 @@ const groupOptions = [
   { key: 'mostUsed', value: 'mostUsed', text: 'Most Used' },
 ];
 
+// --- Lectura del bundle en el navegador (autollenado del formulario) ----------
+// Al elegir el .tar.gz lo descomprimimos y leemos el contrato del bloque para
+// rellenar los campos solos. La FUENTE DE VERDAD del remote_name es el BUNDLE
+// (igual que el backend): asi el operador no teclea nada y nunca hay un mismatch
+// de mayus/minus que dispare "Remote container not found" al insertar el bloque.
+// El backend re-detecta de todas formas; esto es la red de seguridad VISIBLE
+// (ves el name detectado antes de pulsar Install, o vacio si el bundle esta mal).
+const CONTAINER_NAME_RE = /volto[A-Za-z0-9]+Block/;       // mismo patron que el backend
+const EXPOSED_MODULE_RE = /"(\.\/[^"]+)":\(\)=>/;         // modulo expuesto en remoteEntry.js
+const VERSION_FROM_FILENAME_RE = /-(\d+\.\d+\.\d+[a-zA-Z0-9._-]*)\.tar\.gz$/;
+// id/title/group que declara el PROPIO bloque (su @type real). Exigimos group para
+// descartar la variacion {id:"default",title:"Default"} que no lo trae.
+const BLOCK_CONFIG_RE = /id:"([^"]+)",title:"([^"]+)"[^}]*?group:"([^"]+)"/;
+const KNOWN_GROUPS = new Set(['bricks', 'common', 'text', 'media', 'mostUsed']);
+
+interface BundleInfo {
+  remote_name?: string;
+  remote_module?: string;
+  version?: string;
+  block_id?: string;
+  title?: string;
+  group?: string;
+}
+
+// gzip nativo del navegador (sin dependencias). null si el browser no lo soporta
+// (Chrome 80+/Firefox 113+/Safari 16.4+); ahi se cae al llenado manual.
+async function gunzip(buf: ArrayBuffer): Promise<Uint8Array | null> {
+  const DS = (globalThis as any).DecompressionStream;
+  if (typeof DS === 'undefined') return null;
+  const stream = new Blob([buf]).stream().pipeThrough(new DS('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Parser tar minimo: headers de 512 bytes, nombre@0 (100b), tamano@124 (octal).
+function parseTar(bytes: Uint8Array): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  const dec = new TextDecoder();
+  let off = 0;
+  while (off + 512 <= bytes.length) {
+    const name = dec.decode(bytes.subarray(off, off + 100)).replace(/\0.*$/, '');
+    if (!name) break; // bloque cero = fin del archivo
+    const sizeStr = dec.decode(bytes.subarray(off + 124, off + 136)).replace(/[^0-7]/g, '');
+    const size = parseInt(sizeStr || '0', 8) || 0;
+    const start = off + 512;
+    files[name.replace(/^\.\//, '')] = bytes.subarray(start, start + size);
+    off = start + Math.ceil(size / 512) * 512; // datos padeados al multiplo de 512
+  }
+  return files;
+}
+
+// Lee el contrato del bloque del .tar.gz. Mismo orden que el backend:
+// mf-manifest.json > regex sobre remoteEntry.js. Devuelve solo lo detectado.
+async function readBundleInfo(file: File): Promise<BundleInfo | null> {
+  let tarBytes: Uint8Array | null;
+  try {
+    tarBytes = await gunzip(await file.arrayBuffer());
+  } catch {
+    return null;
+  }
+  if (!tarBytes) return null; // navegador sin DecompressionStream -> manual
+  const files = parseTar(tarBytes);
+  const dec = new TextDecoder();
+  const info: BundleInfo = {};
+
+  // 1) mf-manifest.json (contrato explicito), si el bundle lo trae
+  const manifestKey = Object.keys(files).find(
+    (k) => k === 'mf-manifest.json' || k.endsWith('/mf-manifest.json'),
+  );
+  if (manifestKey) {
+    try {
+      const m = JSON.parse(dec.decode(files[manifestKey]));
+      if (typeof m.name === 'string') info.remote_name = m.name;
+      if (typeof m.module === 'string') info.remote_module = m.module;
+      if (typeof m.version === 'string') info.version = m.version;
+    } catch {
+      /* manifest ilegible -> caemos al regex */
+    }
+  }
+
+  // 2) regex sobre remoteEntry.js (fallback para bundles sin manifest)
+  if (!info.remote_name || !info.remote_module) {
+    const reKey = Object.keys(files).find((k) => k.endsWith('remoteEntry.js'));
+    if (reKey) {
+      const content = dec.decode(files[reKey]);
+      if (!info.remote_name) {
+        const m = content.match(CONTAINER_NAME_RE);
+        if (m) info.remote_name = m[0];
+      }
+      if (!info.remote_module) {
+        const m = content.match(EXPOSED_MODULE_RE);
+        if (m) info.remote_module = m[1];
+      }
+    }
+  }
+
+  // 3) version: del nombre del archivo si el bundle no la declara
+  if (!info.version) {
+    const m = file.name.match(VERSION_FROM_FILENAME_RE);
+    if (m) info.version = m[1];
+  }
+
+  // 4) block_id/title/group: el @type REAL que declara el bloque (NO derivado del
+  // name, para no inventar "event-card" cuando el bloque es "eventCard").
+  for (const k of Object.keys(files)) {
+    if (!k.endsWith('.js') || k.endsWith('remoteEntry.js')) continue;
+    const m = dec.decode(files[k]).match(BLOCK_CONFIG_RE);
+    if (m && m[1] !== 'default') {
+      info.block_id = m[1];
+      info.title = m[2];
+      if (KNOWN_GROUPS.has(m[3])) info.group = m[3];
+      break;
+    }
+  }
+
+  return info;
+}
+
 const MFBlocksControlPanel: React.FC = () => {
   const [blocks, setBlocks] = useState<MFBlockEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +197,11 @@ const MFBlocksControlPanel: React.FC = () => {
   });
   const [bundleFile, setBundleFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Campos que se llenaron AUTO desde el bundle (no se sobreescriben al teclear el
+  // titulo) + nota de deteccion mostrada en el modal.
+  const [autoFields, setAutoFields] = useState<Record<string, boolean>>({});
+  const [detectNote, setDetectNote] = useState('');
+  const [detectWarn, setDetectWarn] = useState(false);
 
   // Update modal state
   const [updateTarget, setUpdateTarget] = useState<MFBlockEntry | null>(null);
@@ -139,24 +261,57 @@ const MFBlocksControlPanel: React.FC = () => {
     }
   };
 
-  // Auto-generate remote_name from title
+  // Deriva block_id/remote_name del titulo SOLO si no vinieron ya del bundle
+  // (el bundle manda; teclear el titulo no debe pisar lo auto-detectado).
   const handleTitleChange = (val: string) => {
-    const id = val
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    const remoteName = 'volto' + val
-      .replace(/[^a-zA-Z0-9 ]/g, '')
-      .split(' ')
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join('') + 'Block';
+    setFormData((prev) => {
+      const next = { ...prev, title: val };
+      if (!autoFields.block_id) {
+        next.block_id = val
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+      }
+      if (!autoFields.remote_name) {
+        next.remote_name = 'volto' + val
+          .replace(/[^a-zA-Z0-9 ]/g, '')
+          .split(' ')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join('') + 'Block';
+      }
+      return next;
+    });
+  };
 
-    setFormData((prev) => ({
-      ...prev,
-      title: val,
-      block_id: id,
-      remote_name: remoteName,
-    }));
+  // Al elegir el .tar.gz: leerlo y autollenar el formulario desde el bundle.
+  const handleBundleSelect = async (file: File | null) => {
+    setBundleFile(file);
+    setDetectNote('');
+    setDetectWarn(false);
+    setAutoFields({});
+    if (!file) return;
+    const info = await readBundleInfo(file);
+    if (!info || !info.remote_name) {
+      setDetectWarn(true);
+      setDetectNote(
+        'No se pudo leer el remote_name del bundle en el navegador. ' +
+        'Puedes ingresarlo a mano; el servidor lo re-detecta al instalar.',
+      );
+      return;
+    }
+    const auto: Record<string, boolean> = {};
+    setFormData((prev) => {
+      const next = { ...prev };
+      if (info.remote_name) { next.remote_name = info.remote_name; auto.remote_name = true; }
+      if (info.remote_module) { next.remote_module = info.remote_module; auto.remote_module = true; }
+      if (info.version) { next.version = info.version; auto.version = true; }
+      if (info.block_id) { next.block_id = info.block_id; auto.block_id = true; }
+      if (info.title) { next.title = info.title; auto.title = true; }
+      if (info.group) { next.group = info.group; auto.group = true; }
+      return next;
+    });
+    setAutoFields(auto);
+    setDetectNote(`Detectado del bundle: ${info.remote_name}`);
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -262,6 +417,9 @@ const MFBlocksControlPanel: React.FC = () => {
       group: 'bricks',
     });
     setBundleFile(null);
+    setAutoFields({});
+    setDetectNote('');
+    setDetectWarn(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -419,6 +577,11 @@ const MFBlocksControlPanel: React.FC = () => {
         <Modal.Header>Install New MF Block</Modal.Header>
         <Modal.Content>
           <Form>
+            {detectNote && (
+              <Message info={!detectWarn} warning={detectWarn} size="small">
+                {detectNote}
+              </Message>
+            )}
             <Form.Input
               label="Block Name"
               placeholder="e.g. Hero Banner"
@@ -449,9 +612,10 @@ const MFBlocksControlPanel: React.FC = () => {
 
             <Form.Group widths="equal">
               <Form.Input
-                label="Remote Name"
+                label={autoFields.remote_name ? 'Remote Name (del bundle)' : 'Remote Name'}
                 placeholder="voltoHeroBannerBlock"
                 value={formData.remote_name}
+                readOnly={!!autoFields.remote_name}
                 onChange={(_, { value }) =>
                   setFormData((prev) => ({ ...prev, remote_name: value as string }))
                 }
@@ -485,8 +649,7 @@ const MFBlocksControlPanel: React.FC = () => {
                 type="file"
                 accept=".tar.gz,.tgz"
                 onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setBundleFile(file);
+                  handleBundleSelect(e.target.files?.[0] || null);
                 }}
               />
               {bundleFile && (
