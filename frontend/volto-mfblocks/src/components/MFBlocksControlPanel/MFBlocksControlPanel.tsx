@@ -319,6 +319,18 @@ const MFBlocksControlPanel: React.FC = () => {
     setDetectNote(`Detectado del bundle: ${info.remote_name}`);
   };
 
+  // Al elegir el .tar.gz en Upgrade: re-detecta la versión del bundle (mf-manifest
+  // > nombre de archivo) y la propone en el campo Version. Sin esto el campo queda
+  // en la versión vieja pre-cargada (openUpdateModal), el update NO bumpea
+  // remoteEntry.js?v= (sin cache-bust) y el navegador sigue sirviendo el bundle
+  // anterior. El operador puede sobrescribir el valor detectado.
+  const handleUpdateFileSelect = async (file: File | null) => {
+    setUpdateFile(file);
+    if (!file) return;
+    const info = await readBundleInfo(file);
+    if (info && info.version) setUpdateVersion(info.version);
+  };
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -711,8 +723,7 @@ const MFBlocksControlPanel: React.FC = () => {
                 type="file"
                 accept=".tar.gz,.tgz"
                 onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setUpdateFile(file);
+                  handleUpdateFileSelect(e.target.files?.[0] || null);
                 }}
               />
               {updateFile && (
