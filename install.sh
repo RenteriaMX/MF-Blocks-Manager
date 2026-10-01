@@ -348,7 +348,7 @@ setup_nginx() {
         echo ""
         echo "    location /mf-blocks/ {"
         echo "        alias ${MF_BLOCKS_DIR}/;"
-        echo "        expires 1h;"
+        echo "        add_header Cache-Control \"no-cache\";"
         echo "        add_header Access-Control-Allow-Origin *;"
         echo "    }"
         echo ""
@@ -370,7 +370,7 @@ setup_nginx() {
             cat > "$TEMP_DIR/mf-blocks.conf" <<NGX
 location /mf-blocks/ {
     alias ${MF_BLOCKS_DIR}/;
-    expires 1h;
+    add_header Cache-Control "no-cache";
     add_header Access-Control-Allow-Origin *;
 }
 NGX
@@ -402,7 +402,7 @@ block = (
     '    # Module Federation Blocks (bundles estaticos)\n'
     '    location /mf-blocks/ {\n'
     '        alias $MF_BLOCKS_DIR/;\n'
-    '        expires 1h;\n'
+    '        add_header Cache-Control "no-cache";\n'
     '        add_header Access-Control-Allow-Origin *;\n'
     '    }\n\n'
 )
