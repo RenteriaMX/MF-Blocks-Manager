@@ -7,8 +7,8 @@ Carga dinamica de bloques para Plone 6 / Volto usando Webpack Module Federation.
 ## Instalacion Rapida
 
 ```bash
-curl -sLO https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.sh
-bash install.sh
+curl -sLO https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.py
+python3 install.py
 ```
 
 Sin `sudo`. Ejecuta como el usuario del sistema Plone. El script auto-detecta tu proyecto Plone, instala backend + frontend + Nginx, compila, reinicia servicios y activa el add-on.
@@ -60,7 +60,7 @@ Sin recompilar. Sin reiniciar. Sin pipeline de deploy.
 
 ## Funciones del Instalador Automatico
 
-El script `install.sh` automaticamente:
+El script `install.py` (Python 3, solo libreria estandar; opciones `--yes`, `--dry-run`) automaticamente:
 
 - Detecta el directorio del proyecto Plone (o te deja elegir si hay varios)
 - Detecta el usuario actual (`whoami`), servicios systemd `--user` (patron `plone-*-backend` / `plone-*-frontend`), herramienta pip (`uv` / `pip`)
@@ -258,7 +258,8 @@ sudo /usr/sbin/nginx -t && sudo /usr/bin/systemctl reload nginx
 
 ```
 MF-Blocks-Manager/
-├── install.sh                                    ← Instalador automatico
+├── install.py                                    ← Instalador automatico (Python)
+├── install.sh                                    ← Atajo obsoleto: ejecuta install.py
 ├── README.md                                     ← English version
 ├── README.es.md                                  ← Este archivo (Español)
 ├── backend/
@@ -287,7 +288,7 @@ MF-Blocks-Manager/
 - Node.js 18+
 - pnpm 9+
 - Nginx
-- git, curl
+- git, curl, python3
 
 ## Limitaciones Conocidas
 

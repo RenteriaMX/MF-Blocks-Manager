@@ -8,10 +8,10 @@ Dynamic block loading for Plone 6 / Volto using Webpack Module Federation. Insta
 
 ```bash
 # Default — auto-detects your Plone project:
-curl -sL https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.py | python3 -
 
 # Or with a specific project path:
-curl -sL https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.sh | bash -s /opt/plone/mi-proyecto
+curl -sL https://raw.githubusercontent.com/RenteriaMX/MF-Blocks-Manager/main/install.py | python3 - /opt/plone/mi-proyecto
 ```
 
 No `sudo` required. Run as the Plone system user. The script auto-detects your Plone project, installs backend + frontend + Nginx config, builds, restarts services, and activates the add-on.
@@ -63,7 +63,7 @@ No rebuild. No restart. No deploy pipeline.
 
 ## Auto-Installer Features
 
-The `install.sh` script automatically:
+The `install.py` script (Python 3, standard library only; options `--yes`, `--dry-run`) automatically:
 
 - Detects Plone project directory (or lets you choose if multiple found)
 - Detects current user (`whoami`), systemd `--user` services (pattern `plone-*-backend` / `plone-*-frontend`), pip tool (`uv` / `pip`)
@@ -266,7 +266,8 @@ sudo /usr/sbin/nginx -t && sudo /usr/bin/systemctl reload nginx
 
 ```
 MF-Blocks-Manager/
-├── install.sh                                    ← Auto-installer
+├── install.py                                    ← Auto-installer (Python)
+├── install.sh                                    ← Deprecated shim: runs install.py
 ├── README.md                                     ← This file (English)
 ├── README.es.md                                  ← Spanish version
 ├── backend/
@@ -295,7 +296,7 @@ MF-Blocks-Manager/
 - Node.js 18+
 - pnpm 9+
 - Nginx
-- git, curl
+- git, curl, python3
 
 ## Known Limitations
 
